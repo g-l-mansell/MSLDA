@@ -1,4 +1,4 @@
-### Load the main dataset
+### Load the specta dataset
 setwd("/home/an20830/Documents/COMPASS/TB2/Mini Project/MSLDA/analysis/spectra")
 load("Spectra.Rdata")
 
@@ -77,7 +77,7 @@ res <- res_list1[[6]]
 (p2 <- plot_clusters(res$thetas, idx))
 
 png("LDA_results.png", width=800, height=300)
-grid.arrange(p1, p2, ncol=2)
+grid.arrange(p1, p2, ncol=2, widths=c(1.1, 1))
 dev.off()
 
 
@@ -119,6 +119,7 @@ ggsave("LDA_vs_K.jpg")
 
 
 ### Plot the topic-distributions of the best model from experiment 1
+load("LDA_runs.Rdata")
 beta <- res_list1[[6]]$beta
 for(i in 1:nrow(beta)){
   plot(mz_locations, beta[i,], type="l")
@@ -159,6 +160,6 @@ p2 <- ggplot(pd2, aes(x=mz, y=Intensity, color=Topic, group=Topic)) +
   xlim(c(2900, 3100)) +
   scale_color_manual(values=cols)
 
-png("TopicsVsSpectra_3000.png", width=1000, height=400)
+png("TopicsVsSpectra_3000.png", width=800, height=250)
 grid.arrange(p1, p2, ncol=2)
 dev.off()

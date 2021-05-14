@@ -1,56 +1,77 @@
-#applying smoothed lda to the text dataset
+### Load the text dataset
+setwd("/home/an20830/Documents/COMPASS/TB2/Mini Project/MSLDA/analysis/text")
 load("MyCorpus.Rdata")
-source("/home/an20830/Documents/COMPASS/TB2/Mini Project/MSLDA/R/LDA_funcs_par.R")
-D <- length(docs) #number of documents
-Ns <- sapply(docs, function(w) length(w)) #number of words in each document
-W <- nrow(vocab) #size of vocabulary
-K <- 3 #number of topics
 
-results <- lda(counts, K, thresh=20)
-#View(round(results$thetas, 2))
+source("../../R/plot_funcs.R")
+source("../../R/NMF_funcs.R")
+source("../../R/LDA_original.R")
+source("../../R/LDA_funcs_par.R")
 
-#applying nmf to the text dataset
-source("/home/an20830/Documents/COMPASS/TB2/Mini Project/MSLDA/R/NMF_funcs.R")
-test <- nmf(counts, K=3)
-#View(round(test$W, 2))
+#Run 3 analyses
+K <- 3
+max_iter <- 200
 
+#take the orginal best run from analysis.R
+load("RandomRunsBlei03.Rdata")
+res2 <- res[[9]]
 
-#plots
-source("/home/an20830/Documents/COMPASS/TB2/Mini Project/MSLDA/R/plot_funcs.R")
+#try the other two models three times
+lls <- rep(-Inf, 3)
+for(i in 1:3){
+  res <- nmf(counts, K, max_iter)
+  if(res$ll > lls[1]) res1 <- res
+
+  res <- lda(counts, K, max_iter)
+  if(res$loglik > lls[3]) res3 <- res
+}
+
+save(res1, res2, res3, file="CompareAlgorithms.Rdata")
+
+#Plots
 cols <- brewer.pal(6, "Paired")
 
-p1 <- plot_mixture(test$W, topic_label = letters[1:3]) +
-  scale_fill_manual(values=cols[c(1,3,5)]) +
-  labs(title="NMF Estimated Mixture")
-
-p2 <- plot_mixture(results$thetas, topic_label = LETTERS[1:3]) +
-  scale_fill_manual(values=cols[c(1,3,5)]) +
-  labs(title="LDA Estimated Mixture")
-
-p3 <- plot_mixture(thetas_true) +
+(p1 <- plot_mixture(thetas_true) +
   scale_fill_manual(values=cols[c(2,4,6)]) +
-  labs(title="True Generating Mixture")
+  labs(title="True Generating Mixture"))
 
-#jpeg("/home/an20830/Documents/COMPASS/TB2/Mini Project/Report/text_proportions.jpg", width=1000, height=350)
-grid.arrange(p3, p1, p2, ncol=3)
-#dev.off()
+(p2 <- plot_mixture(res1$W, topic_label = letters[1:3]) +
+  scale_fill_manual(values=cols[c(1,3,5)]) +
+  labs(title="NMF Estimated Mixture"))
+
+(p3 <- plot_mixture(res2$gammas, topic_label = LETTERS[1:3]) +
+  scale_fill_manual(values=cols[c(1,3,5)]) +
+  labs(title="LDA Estimated Mixture"))
+
+(p4 <- plot_mixture(res3$thetas, topic_label = LETTERS[1:3]) +
+  scale_fill_manual(values=cols[c(1,3,5)]) +
+  labs(title="Smoothed LDA Estimated Mixture"))
+
+png("Comparison.png", width=1000, height=350)
+grid.arrange(p1, p2, p3, p4, ncol=2)
+dev.off()
 
 
+#Try to match up the topics (should be easy?) and evaluate some sort of error
+res_list <- list(res1$W, res2$gammas, res3$thetas)
+true_max <- apply(thetas_true, 1, which.max)
+mode <- function(v) {
+  uniqv <- unique(v)
+  uniqv[which.max(tabulate(match(v, uniqv)))]
+}
 
-#testing/comparing my different lda implementations
+error <- rep(NA, 3)
 
-#applying smoothed lda to the text dataset
-load("MyCorpus.Rdata")
+for(i in 1:3){
+  res <- res_list[[i]]
+  res <- res / rowSums(res)
 
-#originial lda
-source("/home/an20830/Documents/COMPASS/TB2/Mini Project/MSLDA/R/LDA_original2.R")
+  model_max <- apply(res, 1, which.max)
+  order <- rep(NA, 3)
+  for(j in 1:K){
+    samples <- which(true_max == j)
+    order[j] <- mode(model_max[samples])
+  }
+  res <- res[,order]
 
-#smoothed lda (basic implementation)
-source("/home/an20830/Documents/COMPASS/TB2/Mini Project/MSLDA/R/LDA_funcs.R")
-res2 <- lda(counts, K=3, max_iter=20)
-plot(res2$lls)
-
-#smoothed lda (optimised implementation)
-source("/home/an20830/Documents/COMPASS/TB2/Mini Project/MSLDA/R/LDA_funcs_par.R")
-res3 <- lda(counts, K=3, max_iter=10)
-plot(res3$lls)
+  error[i] <- mean(abs(thetas_true-res))
+}

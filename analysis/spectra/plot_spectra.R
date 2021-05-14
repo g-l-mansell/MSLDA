@@ -58,8 +58,8 @@ pd2$Sample <- paste("Agr", pd2$Sample, "   ")
     theme_minimal() +
     guides(color = guide_legend(override.aes = list(size = 0.6))))
 
-png("Spectra.png", width=500, height=700)
-grid.arrange(p1, p2, p3, ncol=1, heights = c(2, 1.2, 1.2))
+png("Spectra.png", width=600, height=800)
+grid.arrange(p1, p2, p3, ncol=1, heights = c(4, 2.4, 2.4))
 dev.off()
 
 counts <- as.matrix(counts)
