@@ -21,7 +21,7 @@ for(i in 1:3){
   res <- nmf(counts, K, max_iter)
   if(res$ll > lls[1]) res1 <- res
 
-  res <- lda(counts, K, max_iter)
+  res <- lda(counts, K, max_iter, alpha=0.1)
   if(res$loglik > lls[3]) res3 <- res
 }
 
@@ -34,7 +34,7 @@ cols <- brewer.pal(6, "Paired")
   scale_fill_manual(values=cols[c(2,4,6)]) +
   labs(title="True Generating Mixture"))
 
-(p2 <- plot_mixture(res1$W, topic_label = letters[1:3]) +
+(p2 <- plot_mixture(res1$W, topic_label = LETTERS[1:3]) +
   scale_fill_manual(values=cols[c(1,3,5)]) +
   labs(title="NMF Estimated Mixture"))
 
@@ -46,7 +46,7 @@ cols <- brewer.pal(6, "Paired")
   scale_fill_manual(values=cols[c(1,3,5)]) +
   labs(title="Smoothed LDA Estimated Mixture"))
 
-png("Comparison.png", width=1000, height=350)
+png("Comparison.png", width=800, height=500)
 grid.arrange(p1, p2, p3, p4, ncol=2)
 dev.off()
 
@@ -75,3 +75,7 @@ for(i in 1:3){
 
   error[i] <- mean(abs(thetas_true-res))
 }
+
+print(error)
+plot(error)
+
