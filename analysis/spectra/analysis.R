@@ -1,4 +1,4 @@
-### Load the specta dataset
+### Load the spectra dataset
 setwd("/home/an20830/Documents/COMPASS/TB2/Mini Project/MSLDA/analysis/spectra")
 load("Spectra.Rdata")
 

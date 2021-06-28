@@ -1,5 +1,4 @@
 ### Implementing the LDA algorithm from Blei 2003 paper
-# Does not work!!
 
 #here we have M documents, V words, K topics
 #each document has N_d words which we observe

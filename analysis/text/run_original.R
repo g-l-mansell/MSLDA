@@ -103,22 +103,22 @@ dev.off()
 
 
 #running with different k
-k <- 5
+ks <- 2:5
 n <- 5
-pd <- matrix(data=NA, k, n)
-rownames(pd) <- 1:k+1
+pd <- matrix(data=NA, length(ks), n)
+rownames(pd) <- ks
 colnames(pd) <- paste("rep", 1:n)
 
-for(k in 1:k){
+for(j in 1:length(ks)){
   for(i in 1:n){
     worked <- F
     while(worked == F){
-      temp <- try(lda_blei03(docs, K=(k+1), max_iter=30), silent=TRUE)
+      temp <- try(lda_blei03(docs, K=ks[j], max_iter=30), silent=TRUE)
       if(class(temp) == "try-error") {
         print("trying again")
       } else {
         worked <- T
-        pd[k, i] <- temp$loglik
+        pd[j, i] <- temp$loglik
       }
     }
   }

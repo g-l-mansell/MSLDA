@@ -30,19 +30,19 @@ save(res1, res2, res3, file="CompareAlgorithms.Rdata")
 #Plots
 cols <- brewer.pal(6, "Paired")
 
-(p1 <- plot_mixture(thetas_true) +
+(p1 <- plot_mixture(thetas_true, width=0.6) +
   scale_fill_manual(values=cols[c(2,4,6)]) +
   labs(title="True Generating Mixture"))
 
-(p2 <- plot_mixture(res1$W, topic_label = LETTERS[1:3]) +
+(p2 <- plot_mixture(res1$W, topic_label = LETTERS[1:3], width=0.6) +
   scale_fill_manual(values=cols[c(1,3,5)]) +
   labs(title="NMF Estimated Mixture"))
 
-(p3 <- plot_mixture(res2$gammas, topic_label = LETTERS[1:3]) +
+(p3 <- plot_mixture(res2$gammas, topic_label = LETTERS[1:3], width=0.6) +
   scale_fill_manual(values=cols[c(1,3,5)]) +
   labs(title="LDA Estimated Mixture"))
 
-(p4 <- plot_mixture(res3$thetas, topic_label = LETTERS[1:3]) +
+(p4 <- plot_mixture(res3$thetas, topic_label = LETTERS[1:3], width=0.6) +
   scale_fill_manual(values=cols[c(1,3,5)]) +
   labs(title="Smoothed LDA Estimated Mixture"))
 
