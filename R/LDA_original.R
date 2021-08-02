@@ -1,21 +1,5 @@
 ### Implementing the LDA algorithm from Blei 2003 paper
 
-#here we have M documents, V words, K topics
-#each document has N_d words which we observe
-#the topic each word w_dn comes from z_dn is latent (unobserved)
-#what we want to find are theta_d (the topic proportions),
-#alpha (the Dirichlet parameter), and beta (the topic distributions over words)
-
-#we introduce variational parameters phi_d and gamma_d per document
-#then use an EM like algorithm
-#E-step: estimates of alpha and beta are fixed, update phis and gammas
-#M-step: estimates of phis and gammas are fixed, update alpha and beta
-
-#most of these updates have a simple formula
-#but alpha needs to be optimised using Newton-Raphson
-#we continue the updates until the likelihood has converged
-
-### Defining useful update function
 e_step_d <- function(gamm, phi, alpha, beta, w, thresh=1e-4){
   N <- length(w)
   K <- length(alpha)
@@ -36,10 +20,11 @@ e_step_d <- function(gamm, phi, alpha, beta, w, thresh=1e-4){
     #normalise rows of phi to sum to 1
     phi[rowSums(phi)==0, ] <- 1/K #to prevent dividing by 0!
     phi <- phi / rowSums(phi)
+    #write over any 0s
+    phi[phi==0] <- 1e-16
 
     #update gamma
     gamm <- alpha + colSums(phi)
-    #gamm <- gamm / sum(gamm) #test test test
 
     #check gamma (more efficient than checking loglik)
     if(max(abs(gamm - gamm_old)) < thresh) break
@@ -72,6 +57,10 @@ update_beta <- function(beta, phis, docs){
   }
   #normalise rows of beta to sum to 1
   beta <- beta / rowSums(beta)
+
+  #write over any 0s
+  beta[beta==0] <- 1e-16
+
   return(beta)
 }
 
@@ -84,32 +73,6 @@ loglik_alpha <- function(alpha, gammas, D){
     L <- L + sum((alpha-1) * dig)
   }
   return(L)
-}
-
-nr_alpha <- function(alpha, gammas, max_iter=20, thresh=1e-4){
-  D <- nrow(gammas)
-  loglik <- rep(NA, max_iter)
-  for(iter in 1:max_iter){
-    #calculate g using dL/da in section A.4.2
-    term1 <- digamma(sum(alpha)) - digamma(alpha)
-    term2 <- colSums(digamma(gammas) - digamma(rowSums(gammas)))
-    g <- D*term1 + term2
-
-    #calculate H as diag(h) + z (z just a new constant)
-    z <- D *trigamma(sum(alpha))
-    h <- - D * trigamma(alpha)
-
-    #use linear time Newton Raphson method in section A.2
-    c <- sum(g/h) / (z^-1 + sum(h^-1))
-    alpha <- alpha - (g-c)/h
-
-    #check for convergence
-    loglik[iter] <- loglik_alpha(alpha, gammas, D)
-    if(iter > 5){
-      if(abs(loglik[iter] - loglik[iter-1]) < thresh) break
-    }
-  }
-  return(alpha)
 }
 
 update_alpha <- function(alpha, gammas, max_iter=50, thresh=1e-4){
@@ -140,41 +103,36 @@ update_alpha <- function(alpha, gammas, max_iter=50, thresh=1e-4){
 
 #find the log likelihood of a document using eq 15
 loglik_doc <- function(gamm, phi, alpha, beta, w, K){
+  N <- length(w)
+  t <- digamma(gamm) - digamma(sum(gamm))
+  t_prime <- matrix(t, N, K, byrow=T)
+  beta_prime <- beta[, w]
 
-  #calculate the third line
-  term3 <- 0
-  for(n in 1:length(w)){
-    for(i in 1:K){
-      term3 <- term3 + phi[n, i] * log(beta[i,w[n]])
-    }
-  }
-
-  #store common variable as a K length vector
-  dig <- digamma(gamm) - digamma(sum(gamm))
-
-  L <- lgamma(sum(alpha))
-  - sum(lgamma(alpha))
-  + sum((alpha - 1) * dig)
-  + sum(phi * dig)
-  + term3
-  - lgamma(sum(gamm))
-  + sum(lgamma(gamm))
-  - sum((gamm-1) * dig)
-  - sum(phi * log(phi))
-
+  L <- lgamma(sum(alpha)) - lgamma(sum(gamm)) +
+    sum(lgamma(gamm) - lgamma(alpha) + (alpha-gamm)*t) +
+    sum(phi * (t_prime + log(t(beta_prime)) - log(phi)))
   return(L)
 }
+
 
 #find the overall log-likelihood (sum of documents)
 loglik_corp <- function(gammas, phis, alpha, beta, docs, D, K){
-  L <- 0
+  t <- digamma(gammas) - digamma(rowSums(gammas)) #would be capital T
+  alpha_prime <- matrix(alpha, D, K, byrow=T)
+
+  L <- D*(lgamma(sum(alpha)) - sum(lgamma(alpha))) -
+    sum(lgamma(rowSums(gammas))) +
+    sum((alpha_prime - gammas) * t + lgamma(gammas))
+
   for(d in 1:D){
-    L <- L + loglik_doc(gammas[d,], phis[[d]], alpha, beta, docs[[d]], K)
+    w <- docs[[d]]
+    N <- length(w)
+    t_prime <- matrix(t[d,], N, K, byrow=T)
+    beta_prime <- beta[, w]
+    L <- L + sum(phis[[d]] * (t_prime + log(t(beta_prime)) - log(phis[[d]])))
   }
   return(L)
 }
-
-
 
 initalise_beta <- function(docs, K, V){
   beta <- matrix(0, K, V)
@@ -232,16 +190,18 @@ lda_blei03 <- function(docs, K, max_iter=20, thresh=NULL, seed=NULL){
         break
       }
     }
-
   }
 
-  return(list("beta"=beta, "alpha"=alpha,
+  #retrieve estimates for thetas (proportional to gammas, or officially theta <- Dir(gamma))
+  thetas <- gammas / rowSums(gammas)
+
+  return(list("beta"=beta, "thetas"=thetas,
               "phis"=phis, "gammas"=gammas,
-              "loglik" = loglik[iter],
-              "lls"=loglik[1:iter],
+              "L"=loglik[iter],
+              "Ls"=loglik[1:iter],
+              "alpha"=alpha, "K"=K,
               "iterations"=iter,
               "converged"=conv))
 }
 
-#still not sure alpha update is correct, but at least gammas look reasonable
 

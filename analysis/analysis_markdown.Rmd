@@ -1,0 +1,38 @@
+---
+title: "Testing My LDA"
+author: "Georgie Mansell"
+date: "02/08/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+Remake MSLDA as a just a package with no analysis.
+This script will then contain the analysis, so everything is in one place to be easily rerun.
+
+Whether to rerun all the analysis or just load the results of the last runs will be controlled here:
+```{r}
+rerun_original <- T
+rerun_reshaped <- T
+rerun_smoothed <- T
+```
+
+# Edits to make
+Within the LDA original script, add a catch of what to do when alpha goes below 0
+OR remove alpha to be a hyperparameter so its more like the other two versions?
+
+Try to implement one of the methods in RCpp - including using RcppParallel?
+
+
+
+
+# Text data
+Run all 3 versions on the simulated dataset of documents
+
+Check that all three have monotonically increasing likelihood
+
+Check that all 3 find reasonable thetas and beta when K=3
+
