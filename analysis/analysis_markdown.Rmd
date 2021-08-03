@@ -24,7 +24,7 @@ rerun_smoothed <- T
 Within the LDA original script, add a catch of what to do when alpha goes below 0
 OR remove alpha to be a hyperparameter so its more like the other two versions?
 
-Try to implement one of the methods in RCpp - including using RcppParallel?
+Try to implement one of the methods in Rcpp - including using RcppParallel?
 
 
 
