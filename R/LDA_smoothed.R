@@ -1,6 +1,6 @@
 ### Implementing the batch LDA algorithm from Hoffman 2010 paper
 
-opt_phi_d <- function(phi, gamm, lambda, V, K){
+update_phi_d3 <- function(phi, gamm, lambda, V, K){
   t <- digamma(gamm) - digamma(sum(gamm))
   B <- digamma(lambda) - matrix(digamma(rowSums(lambda)), K, V)
 
@@ -9,24 +9,20 @@ opt_phi_d <- function(phi, gamm, lambda, V, K){
   return(phi)
 }
 
-opt_gamma_d <- function(gamm, alpha, n, phi, V, K){
+update_gamma_d3 <- function(gamm, alpha, n, phi, V, K){
   temp <- matrix(n, V, K) * phi
   gamm <- colSums(temp) + alpha
   return(gamm)
 }
 
-gamma_converged <- function(gamm, gamm_old, tol=0.0001){
-  diff <- mean(abs(gamm - gamm_old))
-  return(diff < tol)
-}
-
-e_step_d <- function(gamm, phi, alpha, lambda, n, V, K){
+e_step_d3 <- function(gamm, phi, alpha, lambda, n, V, K){
+  gamm <- rep(1/K, K)
   for(iter in 1:30){
     gamm_old <- gamm
 
     #update phi and gamma for this document
-    phi <- opt_phi_d(phi, gamm, lambda, V, K)
-    gamm <- opt_gamma_d(gamm, alpha, n, phi, V, K)
+    phi <- update_phi_d3(phi, gamm, lambda, V, K)
+    gamm <- update_gamma_d3(gamm, alpha, n, phi, V, K)
 
     #check for convergence
     if(gamma_converged(gamm, gamm_old)) break
@@ -34,7 +30,7 @@ e_step_d <- function(gamm, phi, alpha, lambda, n, V, K){
   return(list("gamm"=gamm, "phi"=phi))
 }
 
-opt_lambda <- function(lambda, eta, N, phis, V, K, D){
+update_lambda <- function(lambda, eta, N, phis, V, K, D){
   #make a temp matrix with D rows and V columns (same shape as N) per each k
   for(k in 1:K){
     phis_k <- t(phis[,k,])
@@ -44,7 +40,7 @@ opt_lambda <- function(lambda, eta, N, phis, V, K, D){
   return(lambda)
 }
 
-likelihood_corp <- function(phis, gammas, lambda, N, alpha, eta, V, K, D){
+loglik_corp3 <- function(phis, gammas, lambda, N, alpha, eta, V, K, D){
   t <- digamma(gammas) - digamma(rowSums(gammas)) #would be a capital T
   B <- digamma(lambda) - matrix(digamma(rowSums(lambda)), K, V)
 
@@ -63,8 +59,8 @@ likelihood_corp <- function(phis, gammas, lambda, N, alpha, eta, V, K, D){
   return(L)
 }
 
-initalise_lambda <- function(N, K, nmf){
-  if(nmf){
+initalise_lambda <- function(N, K, NMF){
+  if(NMF){
     print("Intialising lambda with NMF")
     lambda <- nmf(N, K)$H + 1
   } else{
@@ -75,38 +71,42 @@ initalise_lambda <- function(N, K, nmf){
 }
 
 
-library(foreach)
-library(doParallel)
-numCores <- detectCores()
-registerDoParallel(numCores)
+#' Run LDA adapted to use a count matrix
+#'
+#' @inheritParams lda_reshaped
+#' @param NMF logical indicating if lambda should be initialised using non-negative matrix factorisation,
+#' if FALSE it is generated using K random documents
+#' @param eta if you want to set the exchangeable Dirichlet parameter for beta,
+#' if NULL a default value of 1/K is used
+#' @import foreach
+#' @import doParallel
+#' @importFrom parallel detectCores
+#' @export
+lda_smoothed <- function(N, K, max_iter=50, thresh=NULL, seed=NULL, cores=NULL, alpha=NULL, eta=NULL, NMF=FALSE){
 
-###### Function to run the LDA
-lda <- function(N, K, max_iter=50, thresh=NULL, alpha=NULL, eta=NULL, NMF=T, messages=TRUE){
   #get number of samples and words from N
+  #define parameters
   V <- ncol(N)
   D <- nrow(N)
-
-  #initialise parameters
+  loglik <- rep(NA, max_iter) #actually the lower bound on the log likelihood
+  conv <- F
   if(is.null(alpha)) alpha <- 1/K
   if(is.null(eta)) eta <- 1/K
 
+  #initialise variables (phi and gamma are reinitialised each E step)
+  phis <- array(NA, c(V, K, D))
+  gammas <- matrix(NA, D, K)
+
   #initialise lambda using K random documents or with NMF
+  if(!is.null(seed)) set.seed(seed)
   lambda <- initalise_lambda(N, K, NMF)
 
-  loglik <- rep(NA, max_iter)
-  conv <- F
-
   for(iter in 1:max_iter){
+    print(paste("Iteration", iter))
+
     # E-step
-    if(messages) print(paste("E-Step iteration", iter))
-
-    #initialise phis and gammas
-    phis <- array(1/K, c(V, K, D))
-    gammas <- matrix(1, D, K)
-
-    #update phi and gamma for each document
     res_lists <- foreach (d=1:D) %dopar% {
-      e_step_d(gamm=gammas[d,], phi=phis[,,d], alpha, lambda, n=N[d,], V, K)
+      e_step_d3(gamm=gammas[d,], phi=phis[,,d], alpha, lambda, n=N[d,], V, K)
     }
     #combine results
     for(d in 1:D){
@@ -115,19 +115,16 @@ lda <- function(N, K, max_iter=50, thresh=NULL, alpha=NULL, eta=NULL, NMF=T, mes
     }
 
     # M-step
-    if(messages) print(paste("M-Step iteration", iter))
-    lambda <- opt_lambda(lambda, eta, N, phis, V, K, D)
+    lambda <- update_lambda(lambda, eta, N, phis, V, K, D)
 
-    # lambda <- foreach(k=1:K, .combine=rbind) %dopar% {
-    #   opt_lambda_k(k, eta, N, phis, K)
-    # }
+    #Check for convergence
+    loglik[iter] <- loglik_corp3(phis, gammas, lambda, N, alpha, eta, V, K, D)
 
-    #check for convergence
-    if(messages) print("Calculating likelihood")
-    loglik[iter] <- likelihood_corp(phis, gammas, lambda, N, alpha, eta, V, K, D)
-    #by default set the convergence threshold to a % of the last value
+    #if no convergence threshold is given, use a default % of the last value
+    if(iter==1 & is.null(thresh)) default_thresh <- T
+
     if(iter > 5){
-      if(is.null(thresh)) thresh <- abs(1e-5 * loglik[iter-1])
+      if(default_thresh) thresh <- abs(1e-4 * loglik[iter-1])
       if(abs(loglik[iter] - loglik[iter-1]) < thresh){
         conv <- T
         break

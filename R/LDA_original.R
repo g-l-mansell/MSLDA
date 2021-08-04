@@ -1,57 +1,51 @@
 ### Implementing the LDA algorithm from Blei 2003 paper
 
-e_step_d <- function(gamm, phi, alpha, beta, w, thresh=1e-4){
-  N <- length(w)
-  K <- length(alpha)
-  gamm <- alpha + N/K
-  phi <- matrix(1/K, N, K)
+update_phi_d <- function(phi, gamm, beta, w, K){
+  beta_prime <- beta[, w]
+  phi <- t(beta_prime * exp(digamma(gamm)))
 
-  #loop until gamma converges (but using a limited for loop to prevent getting stuck in a while loop)
+  #normalise rows of phi to sum to 1
+  phi[rowSums(phi)==0, ] <- 1/K #to prevent dividing by 0
+  phi <- phi / rowSums(phi)
+  phi[phi==0] <- 1e-16 #and write over any 0s
+  return(phi)
+}
+
+update_gamma_d <- function(phi, alpha){
+  gamm <- alpha + colSums(phi)
+  return(gamm)
+}
+
+gamma_converged <- function(gamm, gamm_old, tol=0.0001){
+  diff <- mean(abs(gamm - gamm_old))
+  return(diff < tol)
+}
+
+e_step_d <- function(gamm, phi, alpha, beta, w, V, K){
+  gamm <- rep(1/K, K) #alpha + length(w)/K
+
   for(iter in 1:20){
     gamm_old <- gamm
 
-    #update each element of phi - could vectorise to speed up?
-    for(n in 1:N){
-      for(k in 1:K){
-        phi[n, k] <- beta[k, w[n]] * exp(digamma(gamm[k]))
-      }
-    }
+    #update phi and gamma for this document
+    phi <- update_phi_d(phi, gamm, beta, w, K)
+    gamm <- update_gamma_d(phi, alpha)
 
-    #normalise rows of phi to sum to 1
-    phi[rowSums(phi)==0, ] <- 1/K #to prevent dividing by 0!
-    phi <- phi / rowSums(phi)
-    #write over any 0s
-    phi[phi==0] <- 1e-16
-
-    #update gamma
-    gamm <- alpha + colSums(phi)
-
-    #check gamma (more efficient than checking loglik)
-    if(max(abs(gamm - gamm_old)) < thresh) break
+    #check for convergence
+    if(gamma_converged(gamm, gamm_old)) break
   }
-  return(list(phi, gamm))
-}
-
-e_step <- function(gammas, phis, alpha, beta, docs, thresh){
-  #update the variational parameters for each document in turn
-  #could update each doc in parallel
-  for(d in 1:length(docs)){
-    res <- e_step_d(gamm=gammas[d,], phi=phis[[d]], alpha, beta, w=docs[[d]], thresh=thresh)
-    phis[[d]] <- res[[1]]
-    gammas[d,] <- res[[2]]
-  }
-  return(list(gammas, phis))
+  return(list("gamm"=gamm, "phi"=phi))
 }
 
 #testing new update beta method based on
 #https://github.com/akashii99/Topic-Modelling-with-Latent-Dirichlet-Allocation/blob/master/LDA_blei_implement.ipynb
-update_beta <- function(beta, phis, docs){
-  for(v in 1:ncol(beta)){
+update_beta <- function(beta, phis, docs, V, K, D){
+  for(v in 1:V){
     beta[,v] <- 0
-    for(d in 1:length(docs)){
+    for(d in 1:D){
       w <- docs[[d]]
       phi <- phis[[d]]
-      wnj <- matrix(w == v, nrow(phi), ncol(phi))
+      wnj <- matrix(w == v, nrow(phi), K)
       beta[,v] <- beta[,v] + colSums(phi * as.numeric(wnj))
     }
   }
@@ -102,6 +96,7 @@ update_alpha <- function(alpha, gammas, max_iter=50, thresh=1e-4){
 }
 
 #find the log likelihood of a document using eq 15
+#not currently used
 loglik_doc <- function(gamm, phi, alpha, beta, w, K){
   N <- length(w)
   t <- digamma(gamm) - digamma(sum(gamm))
@@ -134,9 +129,9 @@ loglik_corp <- function(gammas, phis, alpha, beta, docs, D, K){
   return(L)
 }
 
-initalise_beta <- function(docs, K, V){
+initalise_beta <- function(docs, V, K, D){
   beta <- matrix(0, K, V)
-  idx <- sample(1:length(docs), K)
+  idx <- sample(1:D, K)
   for(k in 1:K){
     d <- idx[k]
     for(v in 1:V){
@@ -148,43 +143,58 @@ initalise_beta <- function(docs, K, V){
 }
 
 
-#function to perform lda
-lda_blei03 <- function(docs, K, max_iter=20, thresh=NULL, seed=NULL){
+#' Run LDA as in the Blei 2003 paper
+#'
+#' @param docs a list containing all the documents, with the vocabulary encoded
+#' e.g. docs[[1]] = c(1, 5, 2)  would represent the word indices from a pre-defined vocabulary
+#' @param K the number of topics to look for
+#' @param max_iter the maximum number of EM iterations to run
+#' @param thresh if you want to set a specific threshold for L convergence,
+#' if NULL it's defined as 0.01 percent of the previous value
+#' @param seed if you want a reproducible result you can set a seed,
+#' if NULL the topic distributions are initialised from K random documents,
+#' @return A list of all parameters
+#' @export
+#' @order 1
+lda_original <- function(docs, K, max_iter=50, thresh=NULL, seed=NULL){
 
-  #find parameters
+  #define parameters
   D <- length(docs)
   V <- length(unique(unlist(docs)))
-  Ns <- sapply(docs, length)
   loglik <- rep(NA, max_iter) #actually the lower bound on the log likelihood
   conv <- F
 
-  #initialise variables
+  #initialise variables (phi and gamma are reinitialised each E step)
   alpha <- rep(1/K, K)
-  #beta <- matrix(1/V, K, V)
   phis <- vector("list", D)
   gammas <- matrix(NA, D, K)
 
-  #phi and gamma are reinitialised and tuned on every iteration
-  #initialise beta using a random K documents
-  # if a seed is given use it, but otherwise it will be random each run
+  #initialise beta using a random K documents (using a seed if given)
   if(!is.null(seed)) set.seed(seed)
-  beta <- initalise_beta(docs, K, V)
+  beta <- initalise_beta(docs, V, K, D)
 
   for(iter in 1:max_iter){
     print(paste("Iteration", iter))
 
-    e_res <- e_step(gammas, phis, alpha, beta, docs, thresh=0.1)
-    gammas <- e_res[[1]]
-    phis <- e_res[[2]]
+    #E-step
+    for(d in 1:D){
+      temp <- e_step_d(gammas[d,], phis[[d]], alpha, beta, docs[[d]], V, K)
+      gammas[d,] <- temp$gamm
+      phis[[d]] <- temp$phi
+    }
 
     #M-step
-    beta <- update_beta(beta, phis, docs)
+    beta <- update_beta(beta, phis, docs, V, K, D)
     alpha <- update_alpha(alpha, gammas, max_iter=20, thresh=0.1)
 
+    #Check for convergence
     loglik[iter] <- loglik_corp(gammas, phis, alpha, beta, docs, D, K)
-    #by default set the convergence threshold to 0.1% of the last value
+
+    #if no convergence threshold is given, use a default % of the last value
+    if(iter==1 & is.null(thresh)) default_thresh <- T
+
     if(iter > 5){
-      if(is.null(thresh)) thresh <- abs(0.001* loglik[iter-1])
+      if(default_thresh) thresh <- abs(1e-4 * loglik[iter-1])
       if(abs(loglik[iter] - loglik[iter-1]) < thresh){
         conv <- T
         break

@@ -37,3 +37,7 @@ vignettes/*.pdf
 
 # R Environment Variables
 .Renviron
+
+# Large analysis files
+analysis/analysis_markdown_cache/
+analysis/analysis_markdown_files/

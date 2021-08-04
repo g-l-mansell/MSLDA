@@ -1,6 +1,6 @@
 ### Adapting LDA_original to use a count matrix
 
-opt_phi_d <- function(phi, gamm, beta){
+update_phi_d2 <- function(phi, gamm, beta, K){
   t <- digamma(gamm) - digamma(sum(gamm))
   phi <- t(beta * exp(t - 1))
 
@@ -12,24 +12,20 @@ opt_phi_d <- function(phi, gamm, beta){
   return(phi)
 }
 
-opt_gamma_d <- function(gamm, phi, n, alpha, V, K){
+update_gamma_d2 <- function(gamm, phi, n, alpha, V, K){
   p <- colSums(matrix(n, V, K) * phi)
   gamm <- p + alpha
   return(gamm)
 }
 
-gamma_converged <- function(gamm, gamm_old, tol=0.0001){
-  diff <- mean(abs(gamm - gamm_old))
-  return(diff < tol)
-}
-
-e_step_d <- function(gamm, phi, alpha, beta, n, V, K){
+e_step_d2 <- function(gamm, phi, alpha, beta, n, V, K){
+  gamm <- rep(1/K, K)
   for(iter in 1:20){
     gamm_old <- gamm
 
     #update phi and gamma for this document
-    phi <- opt_phi_d(phi, gamm, beta)
-    gamm <- opt_gamma_d(gamm, phi, n, alpha, V, K)
+    phi <- update_phi_d2(phi, gamm, beta, K)
+    gamm <- update_gamma_d2(gamm, phi, n, alpha, V, K)
 
     #check for convergence
     if(gamma_converged(gamm, gamm_old)) break
@@ -37,7 +33,7 @@ e_step_d <- function(gamm, phi, alpha, beta, n, V, K){
   return(list("gamm"=gamm, "phi"=phi))
 }
 
-update_beta <- function(beta, phis, N, V, K){
+update_beta2 <- function(beta, phis, N, V, K){
   #this step could be optimised, but keeping it long for now to try avoid errors
   for(k in 1:K){
     for(v in 1:V){
@@ -47,15 +43,12 @@ update_beta <- function(beta, phis, N, V, K){
 
   #normalise rows of beta to sum to 1
   beta <- beta / rowSums(beta)
-
-  #write over any 0s
   beta[beta==0] <- 1e-16
-
   return(beta)
 }
 
 
-likelihood_corp <- function(phis, gammas, alpha, beta, N, V, K, D){
+loglik_corp2 <- function(phis, gammas, alpha, beta, N, V, K, D){
   t <- digamma(gammas) - digamma(rowSums(gammas))  #would be a capital T
   N_prime <- array(apply(N, 1, function(n) rep(n, K)), c(V, K, D))
   T_prime <- array(apply(t, c(2, 1), function(t) rep(t, V)), c(V, K, D))
@@ -69,7 +62,7 @@ likelihood_corp <- function(phis, gammas, alpha, beta, N, V, K, D){
   return(L)
 }
 
-initalise_beta <- function(N, V, K, D){
+initalise_beta2 <- function(N, V, K, D){
   #take K random samples, and use their word counts as the initial topic distributions
   idx <- sample(1:D, K)
   beta <- N[idx, ]
@@ -81,39 +74,38 @@ initalise_beta <- function(N, V, K, D){
 }
 
 
-library(foreach)
-library(doParallel)
-numCores <- detectCores()
-registerDoParallel(numCores)
+#' Run LDA adapted to use a count matrix
+#'
+#' @inheritParams lda_noalpha
+#' @param N matrix of word counts
+#' @return A list of all parameters
+#' @import foreach
+#' @import doParallel
+#' @importFrom parallel detectCores
+#' @export
+lda_reshaped <- function(N, K, max_iter=50, thresh=NULL, seed=NULL, cores=NULL, alpha=NULL){
 
-###### Function to run the LDA
-lda_counts <- function(N, K, max_iter=50, thresh=NULL, alpha=NULL, seed=NULL, messages=TRUE){
-
-  #get number of samples and words from N
+  #define parameters
   V <- ncol(N)
   D <- nrow(N)
-
-  #initialise parameters
+  loglik <- rep(NA, max_iter) #actually the lower bound on the log likelihood
+  conv <- F
   if(is.null(alpha)) alpha <- 1/K
 
-  #if a seed is given use it, but otherwise it will be random each run
-  if(!is.null(seed)) set.seed(seed)
-  beta <- initalise_beta(N, V, K, D)
+  #initialise variables (phi and gamma are reinitialised each E step)
+  phis <- array(NA, c(V, K, D))
+  gammas <- matrix(NA, D, K)
 
-  loglik <- rep(NA, max_iter)
-  conv <- F
+  #initialise beta using a random K documents (using a seed if given)
+  if(!is.null(seed)) set.seed(seed)
+  beta <- initalise_beta2(N, V, K, D)
 
   for(iter in 1:max_iter){
-    # E-step
-    if(messages) print(paste("E-Step iteration", iter))
+    print(paste("Iteration", iter))
 
-    #initialise phis and gammas
-    phis <- array(1/K, c(V, K, D))
-    gammas <- matrix(1, D, K)
-
-    #update phi and gamma for each document
+    #E-step
     res_lists <- foreach (d=1:D) %dopar% {
-      e_step_d(gamm=gammas[d,], phi=phis[,,d], alpha, beta, n=N[d,], V, K)
+      e_step_d2(gamm=gammas[d,], phi=phis[,,d], alpha, beta, n=N[d,], V, K)
     }
     #combine results
     for(d in 1:D){
@@ -122,15 +114,16 @@ lda_counts <- function(N, K, max_iter=50, thresh=NULL, alpha=NULL, seed=NULL, me
     }
 
     # M-step
-    if(messages) print(paste("M-Step iteration", iter))
-    beta <- update_beta(beta, phis, N, V, K)
+    beta <- update_beta2(beta, phis, N, V, K)
 
-    #check for convergence
-    if(messages) print("Calculating likelihood")
-    loglik[iter] <- likelihood_corp(phis, gammas, alpha, beta, N, V, K, D)
-    #by default set the convergence threshold to a % of the last value
+    #Check for convergence
+    loglik[iter] <- loglik_corp2(phis, gammas, alpha, beta, N, V, K, D)
+
+    #if no convergence threshold is given, use a default % of the last value
+    if(iter==1 & is.null(thresh)) default_thresh <- T
+
     if(iter > 5){
-      if(is.null(thresh)) thresh <- abs(1e-5 * loglik[iter-1])
+      if(default_thresh) thresh <- abs(1e-4 * loglik[iter-1])
       if(abs(loglik[iter] - loglik[iter-1]) < thresh){
         conv <- T
         break
@@ -138,18 +131,13 @@ lda_counts <- function(N, K, max_iter=50, thresh=NULL, alpha=NULL, seed=NULL, me
     }
   }
 
-  #retrieve estimates for thetas (proportional to gammas, or officially theta <- Dir(gamma))
+  #retrieve estimates for thetas
   thetas <- gammas / rowSums(gammas)
-  #library(MCMCpack)
-  #thetas <- matrix(NA, D, K)
-  #for(d in 1:D){
-  #  thetas[d, ] <- rdirichlet(n=1, alpha=gammas[d,])
-  #}
 
   return(list("beta"=beta, "thetas"=thetas,
               "phis"=phis, "gammas"=gammas,
-              "loglik"=loglik[iter],
-              "lls"=loglik[1:iter],
+              "L"=loglik[iter],
+              "Ls"=loglik[1:iter],
               "alpha"=alpha, "K"=K,
               "iterations"=iter,
               "converged"=conv))

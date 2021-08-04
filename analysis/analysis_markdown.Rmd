@@ -3,28 +3,70 @@ title: "Testing My LDA"
 author: "Georgie Mansell"
 date: "02/08/2021"
 output: pdf_document
+geometry: margin=0.8in
+urlcolor: purple
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, cache=T, fig.align="center", out.width="80%")
+knitr::opts_knit$set(root.dir = '/home/an20830/Documents/COMPASS/Research Project/MSLDA')
 ```
 
 # Introduction
-Remake MSLDA as a just a package with no analysis.
-This script will then contain the analysis, so everything is in one place to be easily rerun.
-
-Whether to rerun all the analysis or just load the results of the last runs will be controlled here:
+MSLDA is now an R package on github (https://github.com/g-l-mansell/MSLDA) which contains my different implementations of LDA:
 ```{r}
-rerun_original <- T
+library(MSLDA)
+```
+
+* LDA_original - as in the Blei 2003 paper - the only implementation that does not run in parallel - only some initialisations will work
+
+* LDA_original_par - as above but the E-step is run in parallel - should give the same results with the same seed.
+
+* LDA_noalpha - since the alpha update rule in LDA_original is flawed, this version treats alpha as a hyperparameter and so all initialisations should work.
+
+* LDA_reshaped - this version is a further adaptation of LDA_original, which uses a count (document-term) matrix as an input rather than the document vectors - this should give the same results as LDA_noalpha with improved speed.
+
+* LDA_smoothed - as in the Hoffman 2010 paper (batch LDA section) - this version assumes beta is a random variable.
+
+This script will then contain the analysis, so everything is in one place to be easily rerun. Whether to rerun the analyses or just load the results of past runs will be controlled here:
+```{r}
+rerun_original <- T 
 rerun_reshaped <- T
 rerun_smoothed <- T
 ```
 
 # Edits to make
-Within the LDA original script, add a catch of what to do when alpha goes below 0
-OR remove alpha to be a hyperparameter so its more like the other two versions?
 
-Try to implement one of the methods in Rcpp - including using RcppParallel?
+* Finish tidying the package functions
+* Add all the analyses to this markdown
+* Try to implement one of the methods in Rcpp - including using RcppParallel
+* Try to follow Colins version with Poission prior
+
+# Check 1
+Running all implementations on the simulated set of documents
+```{r, fig.width=8, fig.height=3}
+load("data/MyCorpus.Rdata")
+par(mfrow=c(1, 2))
+
+res1 <- lda_original(docs, K=3, seed=83)
+plot(res1$Ls, ylab="L", main="Original")
+
+res2 <- lda_original_par(docs, K=3, seed=83)
+plot(res2$Ls, ylab="L", main="Original Parallel")
+
+res3 <- lda_noalpha(docs, K=3, seed=83)
+plot(res3$Ls, ylab="L", main="Alpha as a Hyperparameter")
+
+res4 <- lda_reshaped(counts, K=3, seed=83)
+plot(res4$Ls, ylab="L", main="Reshaped")
+
+res5 <- lda_smoothed(counts, K=3, seed=83)
+plot(res5$Ls, ylab="L", main="Smoothed")
+
+#save(res1, res2, res3, res4, res5, file="analysis/InitalTest.Rdata")
+sapply(list(res1, res2, res3, res4, res5), function(res) res$L)
+```
+
 
 
 
