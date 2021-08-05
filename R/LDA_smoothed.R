@@ -61,7 +61,7 @@ loglik_corp3 <- function(phis, gammas, lambda, N, alpha, eta, V, K, D){
 
 initalise_lambda <- function(N, K, NMF){
   if(NMF){
-    print("Intialising lambda with NMF")
+    message("Intialising lambda with NMF")
     lambda <- nmf(N, K)$H + 1
   } else{
     idx <- sample(1:nrow(N), K)
@@ -76,22 +76,26 @@ initalise_lambda <- function(N, K, NMF){
 #' @inheritParams lda_reshaped
 #' @param NMF logical indicating if lambda should be initialised using non-negative matrix factorisation,
 #' if FALSE it is generated using K random documents
-#' @param eta if you want to set the exchangeable Dirichlet parameter for beta,
-#' if NULL a default value of 1/K is used
+#' @param eta the exchangeable Dirichlet parameter for beta, if NULL a default value of 1/K is used
 #' @import foreach
 #' @import doParallel
 #' @importFrom parallel detectCores
 #' @export
-lda_smoothed <- function(N, K, max_iter=50, thresh=NULL, seed=NULL, cores=NULL, alpha=NULL, eta=NULL, NMF=FALSE){
+lda_smoothed <- function(N, K, max_iter=50, thresh=1e-4, seed=NULL, cores=NULL, alpha=NULL, eta=NULL, NMF=FALSE){
 
   #get number of samples and words from N
   #define parameters
   V <- ncol(N)
   D <- nrow(N)
+
   loglik <- rep(NA, max_iter) #actually the lower bound on the log likelihood
   conv <- F
+
   if(is.null(alpha)) alpha <- 1/K
   if(is.null(eta)) eta <- 1/K
+
+  if(is.null(cores)) cores <- detectCores()
+  registerDoParallel(cores)
 
   #initialise variables (phi and gamma are reinitialised each E step)
   phis <- array(NA, c(V, K, D))
@@ -102,7 +106,7 @@ lda_smoothed <- function(N, K, max_iter=50, thresh=NULL, seed=NULL, cores=NULL, 
   lambda <- initalise_lambda(N, K, NMF)
 
   for(iter in 1:max_iter){
-    print(paste("Iteration", iter))
+    message("Iteration", iter)
 
     # E-step
     res_lists <- foreach (d=1:D) %dopar% {
@@ -119,16 +123,9 @@ lda_smoothed <- function(N, K, max_iter=50, thresh=NULL, seed=NULL, cores=NULL, 
 
     #Check for convergence
     loglik[iter] <- loglik_corp3(phis, gammas, lambda, N, alpha, eta, V, K, D)
-
-    #if no convergence threshold is given, use a default % of the last value
-    if(iter==1 & is.null(thresh)) default_thresh <- T
-
-    if(iter > 5){
-      if(default_thresh) thresh <- abs(1e-4 * loglik[iter-1])
-      if(abs(loglik[iter] - loglik[iter-1]) < thresh){
-        conv <- T
-        break
-      }
+    if(L_converged(loglik, iter, thresh)){
+      conv <- T
+      break
     }
   }
 

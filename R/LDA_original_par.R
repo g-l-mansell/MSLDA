@@ -8,7 +8,7 @@
 #' @importFrom parallel detectCores
 #' @export
 #' @order 1
-lda_original_par <- function(docs, K, max_iter=50, thresh=NULL, seed=NULL, cores=NULL){
+lda_original_par <- function(docs, K, max_iter=50, thresh=1e-4, seed=NULL, cores=NULL){
 
   #define parameters
   D <- length(docs)
@@ -28,7 +28,7 @@ lda_original_par <- function(docs, K, max_iter=50, thresh=NULL, seed=NULL, cores
   beta <- initalise_beta(docs, V, K, D)
 
   for(iter in 1:max_iter){
-    print(paste("Iteration", iter))
+    message("Iteration", iter)
 
     #E-step
     res_lists <- foreach (d=1:D) %dopar% {
@@ -42,20 +42,13 @@ lda_original_par <- function(docs, K, max_iter=50, thresh=NULL, seed=NULL, cores
 
     #M-step
     beta <- update_beta(beta, phis, docs, V, K, D)
-    alpha <- update_alpha(alpha, gammas, max_iter=20, thresh=0.1)
+    alpha <- update_alpha(alpha, gammas, max_iter=20, thresh=0.1, K)
 
     #Check for convergence
     loglik[iter] <- loglik_corp(gammas, phis, alpha, beta, docs, D, K)
-
-    #if no convergence threshold is given, use a default % of the last value
-    if(iter==1 & is.null(thresh)) default_thresh <- T
-
-    if(iter > 5){
-      if(default_thresh) thresh <- abs(1e-4 * loglik[iter-1])
-      if(abs(loglik[iter] - loglik[iter-1]) < thresh){
-        conv <- T
-        break
-      }
+    if(L_converged(loglik, iter, thresh)){
+      conv <- T
+      break
     }
   }
 

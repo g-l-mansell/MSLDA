@@ -8,7 +8,7 @@ lda_smoothed(
   N,
   K,
   max_iter = 50,
-  thresh = NULL,
+  thresh = 1e-04,
   seed = NULL,
   cores = NULL,
   alpha = NULL,
@@ -23,11 +23,9 @@ lda_smoothed(
 
 \item{max_iter}{the maximum number of EM iterations to run}
 
-\item{thresh}{if you want to set a specific threshold for L convergence,
-if NULL it's defined as 0.01 percent of the previous value}
+\item{thresh}{threshold for L convergence, (L_i - L_{i-1})/L_i < thresh}
 
-\item{seed}{if you want a reproducible result you can set a seed,
-if NULL the topic distributions are initialised from K random documents,}
+\item{seed}{set a seed for the random documents to initialise beta}
 
 \item{cores}{number of cores to run the E-step in parallel,
 if NULL all detected cores are used}
@@ -35,8 +33,7 @@ if NULL all detected cores are used}
 \item{alpha}{if you want to set the exchangeable Dirichlet parameter for theta,
 if NULL a default value of 1/K is used}
 
-\item{eta}{if you want to set the exchangeable Dirichlet parameter for beta,
-if NULL a default value of 1/K is used}
+\item{eta}{the exchangeable Dirichlet parameter for beta, if NULL a default value of 1/K is used}
 
 \item{NMF}{logical indicating if lambda should be initialised using non-negative matrix factorisation,
 if FALSE it is generated using K random documents}

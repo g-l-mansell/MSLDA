@@ -83,14 +83,19 @@ initalise_beta2 <- function(N, V, K, D){
 #' @import doParallel
 #' @importFrom parallel detectCores
 #' @export
-lda_reshaped <- function(N, K, max_iter=50, thresh=NULL, seed=NULL, cores=NULL, alpha=NULL){
+lda_reshaped <- function(N, K, max_iter=50, thresh=1e-4, seed=NULL, cores=NULL, alpha=NULL){
 
   #define parameters
   V <- ncol(N)
   D <- nrow(N)
+
   loglik <- rep(NA, max_iter) #actually the lower bound on the log likelihood
   conv <- F
+
   if(is.null(alpha)) alpha <- 1/K
+
+  if(is.null(cores)) cores <- detectCores()
+  registerDoParallel(cores)
 
   #initialise variables (phi and gamma are reinitialised each E step)
   phis <- array(NA, c(V, K, D))
@@ -101,7 +106,7 @@ lda_reshaped <- function(N, K, max_iter=50, thresh=NULL, seed=NULL, cores=NULL, 
   beta <- initalise_beta2(N, V, K, D)
 
   for(iter in 1:max_iter){
-    print(paste("Iteration", iter))
+    message("Iteration", iter)
 
     #E-step
     res_lists <- foreach (d=1:D) %dopar% {
@@ -118,16 +123,9 @@ lda_reshaped <- function(N, K, max_iter=50, thresh=NULL, seed=NULL, cores=NULL, 
 
     #Check for convergence
     loglik[iter] <- loglik_corp2(phis, gammas, alpha, beta, N, V, K, D)
-
-    #if no convergence threshold is given, use a default % of the last value
-    if(iter==1 & is.null(thresh)) default_thresh <- T
-
-    if(iter > 5){
-      if(default_thresh) thresh <- abs(1e-4 * loglik[iter-1])
-      if(abs(loglik[iter] - loglik[iter-1]) < thresh){
-        conv <- T
-        break
-      }
+    if(L_converged(loglik, iter, thresh)){
+      conv <- T
+      break
     }
   }
 

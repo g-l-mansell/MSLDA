@@ -69,7 +69,7 @@ loglik_alpha <- function(alpha, gammas, D){
   return(L)
 }
 
-update_alpha <- function(alpha, gammas, max_iter=50, thresh=1e-4){
+update_alpha <- function(alpha, gammas, max_iter=50, thresh=1e-4, K){
   D <- nrow(gammas)
   loglik <- rep(NA, max_iter)
   for(iter in 1:max_iter){
@@ -92,6 +92,9 @@ update_alpha <- function(alpha, gammas, max_iter=50, thresh=1e-4){
       if(abs(loglik[iter] - loglik[iter-1]) < thresh) break
     }
   }
+
+  alpha[alpha <= 0] <- 0.01
+  #if(any(alpha <= 0)) alpha <- rep(1/K, K)
   return(alpha)
 }
 
@@ -142,6 +145,16 @@ initalise_beta <- function(docs, V, K, D){
   return(beta)
 }
 
+L_converged <- function(Ls, iter, thresh){
+  #calculate relative error
+  if(iter > 1){
+    re <- abs(Ls[iter-1] - Ls[iter])/abs(Ls[iter-1])
+    return(re < thresh)
+  } else {
+    return(FALSE)
+  }
+}
+
 
 #' Run LDA as in the Blei 2003 paper
 #'
@@ -149,14 +162,12 @@ initalise_beta <- function(docs, V, K, D){
 #' e.g. docs[[1]] = c(1, 5, 2)  would represent the word indices from a pre-defined vocabulary
 #' @param K the number of topics to look for
 #' @param max_iter the maximum number of EM iterations to run
-#' @param thresh if you want to set a specific threshold for L convergence,
-#' if NULL it's defined as 0.01 percent of the previous value
-#' @param seed if you want a reproducible result you can set a seed,
-#' if NULL the topic distributions are initialised from K random documents,
+#' @param thresh threshold for L convergence, (L_i - L_{i-1})/L_i < thresh
+#' @param seed set a seed for the random documents to initialise beta
 #' @return A list of all parameters
 #' @export
 #' @order 1
-lda_original <- function(docs, K, max_iter=50, thresh=NULL, seed=NULL){
+lda_original <- function(docs, K, max_iter=50, thresh=1e-4, seed=NULL){
 
   #define parameters
   D <- length(docs)
@@ -174,7 +185,7 @@ lda_original <- function(docs, K, max_iter=50, thresh=NULL, seed=NULL){
   beta <- initalise_beta(docs, V, K, D)
 
   for(iter in 1:max_iter){
-    print(paste("Iteration", iter))
+    message("Iteration", iter)
 
     #E-step
     for(d in 1:D){
@@ -185,20 +196,13 @@ lda_original <- function(docs, K, max_iter=50, thresh=NULL, seed=NULL){
 
     #M-step
     beta <- update_beta(beta, phis, docs, V, K, D)
-    alpha <- update_alpha(alpha, gammas, max_iter=20, thresh=0.1)
+    alpha <- update_alpha(alpha, gammas, max_iter=20, thresh=0.1, K)
 
     #Check for convergence
     loglik[iter] <- loglik_corp(gammas, phis, alpha, beta, docs, D, K)
-
-    #if no convergence threshold is given, use a default % of the last value
-    if(iter==1 & is.null(thresh)) default_thresh <- T
-
-    if(iter > 5){
-      if(default_thresh) thresh <- abs(1e-4 * loglik[iter-1])
-      if(abs(loglik[iter] - loglik[iter-1]) < thresh){
-        conv <- T
-        break
-      }
+    if(L_converged(loglik, iter, thresh)){
+      conv <- T
+      break
     }
   }
 
