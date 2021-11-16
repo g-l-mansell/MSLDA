@@ -9,7 +9,7 @@ urlcolor: purple
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, cache=T, fig.align="center", out.width="80%")
-knitr::opts_knit$set(root.dir = '/home/an20830/Documents/COMPASS/Research Project/MSLDA')
+knitr::opts_knit$set(root.dir = '/home/an20830/Documents/COMPASS/Research Project/3_MyLDAPackage/MSLDA')
 ```
 
 # Introduction
@@ -25,22 +25,11 @@ library(tidyverse)
 
 * lda_noalpha - since the alpha update rule in LDA_original is flawed, this version treats alpha as a hyperparameter which should be tuned.
 
-* lda_reshaped - this version is a further adaptation of LDA_original, which uses a count (document-term) matrix as an input rather than the document vectors - this should give the same results as LDA_noalpha with improved speed.
+* lda_reshaped - this version is a further adaptation of LDA_original, which uses a count (document-term) matrix as an input rather than the document vectors - this should give the same results as LDA_originial_par with improved speed.
+
+* lda_reshaped_noalpha - this is the reshaped algorithm above but with alpha as a hyperparamter - this should give the same results as LDA_noalpha with improved speed.
 
 * lda_smoothed - as in the Hoffman 2010 paper (batch LDA section), with edited equation for $\mathcal{L}$ - this version assumes beta is a random variable.
-
-This script will then contain the analysis, so everything is in one place to be easily rerun. Whether to rerun the analyses or just load the results of past runs will be controlled here:
-```{r}
-rerun_original <- T 
-rerun_reshaped <- T
-rerun_smoothed <- T
-```
-
-# To do
-
-* Try to implement one of the methods in Rcpp (with RcppParallel?)
-* Try to follow Colins version with Poison prior
-* Read about sparse LDA 
 
 # Check all 5 implementations work
 using the simulated dataset of documents and the same seed.
@@ -56,26 +45,33 @@ res2 <- lda_original_par(docs, K=3, seed=83)
 plot(res2$Ls, ylab="L", main="Original Parallel")
 
 res3 <- lda_noalpha(docs, K=3, seed=83)
-plot(res3$Ls, ylab="L", main="Alpha as a Hyperparameter")
+plot(res3$Ls, ylab="L", main="Original no alpha")
 
 res4 <- lda_reshaped(counts, K=3, seed=83)
 plot(res4$Ls, ylab="L", main="Reshaped")
 
-res5 <- lda_smoothed(counts, K=3, seed=83, NMF=F)
+res5 <- lda_reshaped_noalpha(counts, K=3, seed=83)
+plot(res4$Ls, ylab="L", main="Reshaped no alpha")
+
+res6 <- lda_smoothed(counts, K=3, seed=83, NMF=F)
 plot(res5$Ls, ylab="L", main="Smoothed")
 
-res6 <- lda_smoothed(counts, K=3, seed=83, NMF=T)
+res7 <- lda_smoothed(counts, K=3, seed=83, NMF=T)
 plot(res6$Ls, ylab="L", main="Smoothed with NMF")
 ```
 
 ```{r}
-(Ls <- sapply(list(res1, res2, res3, res4, res5, res6), function(res) res$L))
-plot(Ls, ylab="L", main="Compare final L", col=c(1, 1, 2, 2, 3, 3), pch=16)
-#i thought res3$L and res4$L should be exactly the same, but 1dp off isnt too bad?
+(Ls <- sapply(list(res1, res2, res3, res4, res5, res6, res7), function(res) res$L))
+plot(Ls, ylab="L", main="Compare final L", col=c(1, 1, 2, 1, 2, 3, 3), pch=16)
+#black is lda orginal, should be equal
+#red is lda with no alpha, should be equal 
+#i thought the reshaped versions 4 and 5 would be the same as 2 and 4 respectively, but 1dp off isnt too bad
 #interestingly lda_smoothed seems to have performed the best, and nmf initalisation makes it slightly worse?
 ```
 
 Now we know all 5 work as expected, we can just look at the 3 main ones: lda_orginal_par, lda_reshaped, and lda_smoothed.
+
+# I haven't updated code below this line since editing lda_reshaped and lda_reshaped_noalpha
 
 # Text data
 Running these 3 implementations multiple times with different numbers of topics (expecting a peak at K=3), saving the final values of L to `resK`, and keeping the full results of the runs with the highest L.
@@ -291,7 +287,7 @@ for(i in 1:reps){
 plot_LvK(res_LvA, alphas) + labs(title="LDA reshaped", x="alpha")
 ```
 
-Looks like 0.05 is a good value of alpha.
+Looks like 0.1 is a good value of alpha.
 
 Visualise the results of this model
 
@@ -347,4 +343,5 @@ compare_topic_spectra(beta, counts, mz_locations, topic=7, strain="RN4220")
 
 compare_topic_spectra(beta, counts, mz_locations, topic=4, strain="Hld")
 ```
+
 

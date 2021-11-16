@@ -40,7 +40,7 @@ update_lambda <- function(lambda, eta, N, phis, V, K, D){
   return(lambda)
 }
 
-loglik_corp3 <- function(phis, gammas, lambda, N, alpha, eta, V, K, D){
+loglik_corp4 <- function(phis, gammas, lambda, N, alpha, eta, V, K, D){
   t <- digamma(gammas) - digamma(rowSums(gammas)) #would be a capital T
   B <- digamma(lambda) - matrix(digamma(rowSums(lambda)), K, V)
 
@@ -122,7 +122,7 @@ lda_smoothed <- function(N, K, max_iter=50, thresh=1e-4, seed=NULL, cores=NULL, 
     lambda <- update_lambda(lambda, eta, N, phis, V, K, D)
 
     #Check for convergence
-    loglik[iter] <- loglik_corp3(phis, gammas, lambda, N, alpha, eta, V, K, D)
+    loglik[iter] <- loglik_corp4(phis, gammas, lambda, N, alpha, eta, V, K, D)
     if(L_converged(loglik, iter, thresh)){
       conv <- T
       break

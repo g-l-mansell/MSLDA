@@ -1,54 +1,4 @@
-### Adapting LDA_original to use a count matrix
-
-update_phi_d2 <- function(phi, gamm, beta, K){
-  t <- digamma(gamm) - digamma(sum(gamm))
-  phi <- t(beta * exp(t - 1))
-
-  #normalise rows of phi to sum to 1
-  phi[rowSums(phi)==0, ] <- 1/K #to prevent dividing by 0
-  phi <- phi / rowSums(phi)
-  phi[phi==0] <- 1e-16 #and write over any 0s
-
-  return(phi)
-}
-
-update_gamma_d2 <- function(gamm, phi, n, alpha, V, K){
-  p <- colSums(matrix(n, V, K) * phi)
-  gamm <- p + alpha
-  return(gamm)
-}
-
-e_step_d2 <- function(gamm, phi, alpha, beta, n, V, K){
-  gamm <- rep(1/K, K)
-  for(iter in 1:20){
-    gamm_old <- gamm
-
-    #update phi and gamma for this document
-    phi <- update_phi_d2(phi, gamm, beta, K)
-    gamm <- update_gamma_d2(gamm, phi, n, alpha, V, K)
-
-    #check for convergence
-    if(gamma_converged(gamm, gamm_old)) break
-  }
-  return(list("gamm"=gamm, "phi"=phi))
-}
-
-update_beta2 <- function(beta, phis, N, V, K){
-  #this step could be optimised, but keeping it long for now to try avoid errors
-  for(k in 1:K){
-    for(v in 1:V){
-      beta[k,v] <- sum(N[,v] * phis[v,k,])
-    }
-  }
-
-  #normalise rows of beta to sum to 1
-  beta <- beta / rowSums(beta)
-  beta[beta==0] <- 1e-16
-  return(beta)
-}
-
-
-loglik_corp2 <- function(phis, gammas, alpha, beta, N, V, K, D){
+loglik_corp3 <- function(phis, gammas, alpha, beta, N, V, K, D){
   t <- digamma(gammas) - digamma(rowSums(gammas))  #would be a capital T
   N_prime <- array(apply(N, 1, function(n) rep(n, K)), c(V, K, D))
   T_prime <- array(apply(t, c(2, 1), function(t) rep(t, V)), c(V, K, D))
@@ -62,20 +12,8 @@ loglik_corp2 <- function(phis, gammas, alpha, beta, N, V, K, D){
   return(L)
 }
 
-initalise_beta2 <- function(N, V, K, D){
-  #take K random samples, and use their word counts as the initial topic distributions
-  idx <- sample(1:D, K)
-  beta <- N[idx, ]
-  #normalise so rows sum to 1
-  beta <- beta / rowSums(beta)
-  #write over any 0s
-  beta[beta==0] <- 1e-16
-  return(beta)
-}
 
-
-#' Run LDA adapted to use a count matrix
-#'
+#' @describeIn lda_reshaped Alpha is fixed
 #' @inheritParams lda_noalpha
 #' @param N matrix of word counts
 #' @return A list of all parameters
@@ -83,7 +21,8 @@ initalise_beta2 <- function(N, V, K, D){
 #' @import doParallel
 #' @importFrom parallel detectCores
 #' @export
-lda_reshaped <- function(N, K, max_iter=50, thresh=1e-4, seed=NULL, cores=NULL, alpha=NULL){
+#' @order 2
+lda_reshaped_noalpha <- function(N, K, max_iter=50, thresh=1e-4, seed=NULL, cores=NULL, alpha=NULL){
 
   #define parameters
   V <- ncol(N)
@@ -122,7 +61,7 @@ lda_reshaped <- function(N, K, max_iter=50, thresh=1e-4, seed=NULL, cores=NULL, 
     beta <- update_beta2(beta, phis, N, V, K)
 
     #Check for convergence
-    loglik[iter] <- loglik_corp2(phis, gammas, alpha, beta, N, V, K, D)
+    loglik[iter] <- loglik_corp3(phis, gammas, alpha, beta, N, V, K, D)
     if(L_converged(loglik, iter, thresh)){
       conv <- T
       break
